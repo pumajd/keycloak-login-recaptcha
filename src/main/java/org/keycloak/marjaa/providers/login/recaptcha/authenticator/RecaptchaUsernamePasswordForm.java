@@ -27,6 +27,9 @@ import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import org.keycloak.authentication.AuthenticationFlowError;
+import org.keycloak.authentication.FlowStatus;
+
 
 public class RecaptchaUsernamePasswordForm extends UsernamePasswordForm implements Authenticator{
 	public static final String G_RECAPTCHA_RESPONSE = "g-recaptcha-response";
@@ -36,9 +39,9 @@ public class RecaptchaUsernamePasswordForm extends UsernamePasswordForm implemen
 	private static final Logger logger = Logger.getLogger(RecaptchaUsernamePasswordFormFactory.class);
 	private String siteKey;
 
-	@Override
+        @Override
 	protected Response createLoginForm( LoginFormsProvider form ) {
-		form.setAttribute("recaptchaRequired", true);
+            	form.setAttribute("recaptchaRequired", true);
 		form.setAttribute("recaptchaSiteKey", siteKey);
 		return super.createLoginForm( form );
 	}
@@ -46,15 +49,11 @@ public class RecaptchaUsernamePasswordForm extends UsernamePasswordForm implemen
 	@Override
 	public void authenticate(AuthenticationFlowContext context) {
 		context.getEvent().detail(Details.AUTH_METHOD, "auth_method");
-		if (logger.isInfoEnabled()) {
-			logger.info(
-					"validateRecaptcha(AuthenticationFlowContext, boolean, String, String) - Before the validation");
-		}
-
+               		
 		AuthenticatorConfigModel captchaConfig = context.getAuthenticatorConfig();
 		LoginFormsProvider form = context.form();
 		String userLanguageTag = context.getSession().getContext().resolveLocale(context.getUser()).toLanguageTag();
-
+                
 		if (captchaConfig == null || captchaConfig.getConfig() == null
 				|| captchaConfig.getConfig().get(SITE_KEY) == null
 				|| captchaConfig.getConfig().get(SITE_SECRET) == null) {
@@ -65,7 +64,7 @@ public class RecaptchaUsernamePasswordForm extends UsernamePasswordForm implemen
 		form.setAttribute("recaptchaRequired", true);
 		form.setAttribute("recaptchaSiteKey", siteKey);
 		form.addScript("https://www.google.com/recaptcha/api.js?hl=" + userLanguageTag);
-
+                  
 		super.authenticate(context);
 	}
 
@@ -73,33 +72,38 @@ public class RecaptchaUsernamePasswordForm extends UsernamePasswordForm implemen
 	public void action(AuthenticationFlowContext context) {
 		if (logger.isDebugEnabled()) {
 			logger.debug("action(AuthenticationFlowContext) - start");
-		}
+		}                
 		MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
 		List<FormMessage> errors = new ArrayList<>();
 		boolean success = false;
 		context.getEvent().detail(Details.AUTH_METHOD, "auth_method");
 
 		String captcha = formData.getFirst(G_RECAPTCHA_RESPONSE);
-		if (!Validation.isBlank(captcha)) {
+               	if (!Validation.isBlank(captcha)) {
 			AuthenticatorConfigModel captchaConfig = context.getAuthenticatorConfig();
 			String secret = captchaConfig.getConfig().get(SITE_SECRET);
 
 			success = validateRecaptcha(context, success, captcha, secret);
-		}
-		if (success) {
+		}                
+		if (success) {                        
 			super.action(context);
-		} else {
+                        if(FlowStatus.FAILURE_CHALLENGE.equals(context.getStatus())) {
+                                authenticate(context);
+                                return;
+                            }
+		} else {                        
 			errors.add(new FormMessage(null, Messages.RECAPTCHA_FAILED));
 			formData.remove(G_RECAPTCHA_RESPONSE);
-			// context.error(Errors.INVALID_REGISTRATION);
-			// context.validationError(formData, errors);
-			// context.excludeOtherErrors();
+                        context.getEvent().error(Messages.RECAPTCHA_FAILED); 
+                        
+                        Response challengeResponse = challenge(context, Messages.RECAPTCHA_FAILED);
+                        context.failureChallenge(AuthenticationFlowError.INVALID_USER, challengeResponse);
+                        authenticate(context);                        
 			return;
 		}
-
-		if (logger.isDebugEnabled()) {
+               	if (logger.isDebugEnabled()) {
 			logger.debug("action(AuthenticationFlowContext) - end");
-		}
+		}                
 	}
 
 	protected boolean validateRecaptcha(AuthenticationFlowContext context, boolean success, String captcha, String secret) {
